@@ -98,6 +98,74 @@ app.get("/image", async (req, res) => {
         const statBoxHeight = Math.floor(statFontSize * 1.8);
         const statBoxX = boxMargin + padding + Math.floor(nameSize * name.length * 0.55) + 40;
         const statBoxY = nameY - Math.floor(statFontSize * 0.8);
+        if (fontObj) {
+            // 이름을 path로 렌더링 (이 부분은 아마 문제없을 테니 그대로)
+            if (name) {
+                // 이름 Path 생성은 원래 잘 되고 있었을 가능성이 높지만, 안전하게 try-catch로 감싸기
+                try {
+                    const namePath = fontObj.getPath(name, boxMargin + padding, nameY, nameSize);
+                    const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
+                    textSvg += `<path d="${d}" fill="white" class="shadow"/>`;
+                } catch (nameErr) {
+                    console.error(`❌ 이름 Path 생성 실패! ('${name}'):`, nameErr.message, "-> <text> 태그로 fallback!");
+                    textSvg += `<text x="${boxMargin + padding}" y="${nameY}" class="text shadow" fill="white" font-size="${nameSize}">${name}</text>`;
+                }
+
+                // --- 🚨 여기가 제일 중요! stat 텍스트 부분 🚨 ---
+                try {
+                    // 스탯 텍스트를 Path로 그리는 것을 시도 (여기서 문제가 많이 생김)
+                    const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
+                    const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
+                    textSvg += `<path d="${statD}" fill="white" class="shadow"/>`;
+                    console.log(`✅ 스탯 Path 생성 성공: '${stat}'`); // 성공하면 이 메시지가 뜰 거야!
+                } catch (statErr) {
+                    // Path로 그리는 데 실패하면, 무조건! <text> 태그로 그린다!
+                    console.error(`❌❌❌ 심각! 스탯 Path 생성 실패! ('${stat}'):`, statErr.message, "-> <text> 태그로 fallback!"); // 실패하면 이 에러 메시지가 뜸!
+                    textSvg += `<text x="${statBoxX}" y="${nameY}" class="text shadow" fill="white" font-size="${statFontSize}">${stat}</text>`;
+                }
+                // --- 🚨 stat 텍스트 끝 🚨 ---
+            }
+
+            // 대사들도 마찬가지로 `wrappedLines` -> `wrappedLine` 수정 및 try-catch 적용
+            lines.forEach((line) => {
+                if (line.trim()) {
+                    const wrappedLines = wrapText(line, maxCharsPerLine);
+                    wrappedLines.forEach((wrappedLine) => { // 여기서 `wrappedLine` 사용
+                        if (textY < boxTop + boxHeight - 15) {
+                            try {
+                                const p = fontObj.getPath(wrappedLine, boxMargin + padding, textY, fontSize_); // ✨ `wrappedLine`으로 수정 ✨
+                                const dLine = p.toPathData ? p.toPathData(2) : p.toSVG();
+                                textSvg += `<path d="${dLine}" fill="white" class="shadow"/>`;
+                            } catch (lineErr) {
+                                console.error(`❌ 대사 Path 생성 실패! ('${wrappedLine}'):`, lineErr.message, "-> <text> 태그로 fallback!");
+                                textSvg += `<text x="${boxMargin + padding}" y="${textY}" class="text shadow" fill="white" font-size="${fontSize_}">${wrappedLine}</text>`;
+                            }
+                            textY += lineHeight;
+                        }
+                    });
+                }
+            });
+
+        } else { // opentype.js 로드 자체가 실패했을 때의 fallback 로직도 `wrappedLine` 수정
+            console.warn("⚠️ opentype.js 폰트 로드 실패로 <text> 태그 fallback 사용 중입니다. 폰트 경로/파일을 확인하세요.");
+
+            if (name) {
+                textSvg += `<text x="${boxMargin + padding}" y="${nameY}" class="text shadow" fill="white" font-size="${nameSize}">${name}</text>`;
+                textSvg += `<text x="${statBoxX}" y="${nameY}" class="text shadow" fill="white" font-size="${statFontSize}">${stat}</text>`;
+            }
+
+            lines.forEach((line) => {
+                if (line.trim()) {
+                    const wrappedLines = wrapText(line, maxCharsPerLine);
+                    wrappedLines.forEach((wrappedLine) => { // 여기서 `wrappedLine` 사용
+                        if (textY < boxTop + boxHeight - 15) {
+                            textSvg += `<text x="${boxMargin + padding}" y="${textY}" class="text shadow" fill="white" font-size="${fontSize_}">${wrappedLine}</text>`; // ✨ `wrappedLine`으로 수정 ✨
+                            textY += lineHeight;
+                        }
+                    });
+                }
+            });
+        }
 
         // 이름 및 대사 표시: opentype으로 로드되면 path로 렌더링, 아니면 <text>로 폰트 사용
         const lines = text.split("\n");
