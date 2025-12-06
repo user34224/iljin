@@ -57,10 +57,6 @@ app.get("/image", async (req, res) => {
         const fontSize = parseInt(req.query.size) || 28;
         const stat = req.query.stat || "stat";  // Express가 자동 디코딩
 
-        // 캐시 키 생성
-        const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
-        res.set("Cache-Control", "public, max-age=31536000, immutable");
-
         // 이미지 파일 찾기
         const imageFile = `${imgNum}.jpg`;
         const imagePath = path.join(mgDir, imageFile);
@@ -73,8 +69,6 @@ app.get("/image", async (req, res) => {
         const metadata = await sharp(imagePath).metadata();
         const width = metadata.width;
         const height = metadata.height;
-
-        console.log(`📸 생성 중: ${imageFile} (${width}x${height})`);
 
         // 텍스트 SVG 생성
         let fontSize_ = Math.floor(fontSize);
@@ -139,9 +133,8 @@ app.get("/image", async (req, res) => {
                 const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
                 textSvg += `<path d="${d}" fill="white" />`;
 
-                const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
-                const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
-                textSvg += `<path d="${statD}" fill="white" />`;
+                // stat은 특수문자 포함 가능 → 항상 <text>로 처리
+                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${toEntity(stat)}</text>`;
             }
 
             lines.forEach((line) => {
