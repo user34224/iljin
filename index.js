@@ -12,11 +12,51 @@ const mgDir = path.join(__dirname, "mg");
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
-        function safeDecode(v, def = "") {
+        // ✅ 1️⃣ 여기: 무조건 디코딩
+        const rawText = req.query.text || "";
+        let safeText;
+
+        try {
+            safeText = decodeURIComponent(rawText);
+        } catch (e) {
+            safeText = rawText; // 이미 디코딩된 경우 대비
+        }
+
+        // ✅ 2️⃣ 여기: SVG 생성
+        const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="600" height="300">
+      <style>
+        text { font-family: Arial, sans-serif; font-size: 24px; fill: black; }
+      </style>
+      <rect width="100%" height="100%" fill="white"/>
+      <text x="30" y="150">${safeText}</text>
+    </svg>
+    `;
+
+        // ✅ 3️⃣ 여기: charset 포함된 Content-Type
+        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+
+        // ✅ 4️⃣ 여기: utf-8 버퍼 변환
+        const buffer = Buffer.from(svg, "utf-8");
+
+        res.send(buffer);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("error");
+    }
+});
+
+// 이미지 생성 API (PNG)
+app.get("/image/png", async (req, res) => {
+    try {
+        // 안전한 디코딩 함수
+        function safeDecode(value, defaultValue) {
+            if (!value) return defaultValue;
             try {
-                return decodeURIComponent(v);
-            } catch {
-                return v || def;
+                return decodeURIComponent(value);
+            } catch (e) {
+                return value;
             }
         }
 
