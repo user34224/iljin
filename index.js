@@ -12,66 +12,12 @@ const mgDir = path.join(__dirname, "mg");
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
-        // ✅ 1️⃣ 여기: 무조건 디코딩
-        const rawText = req.query.text || "";
-        let safeText;
-
-        try {
-            safeText = decodeURIComponent(rawText);
-        } catch (e) {
-            safeText = rawText; // 이미 디코딩된 경우 대비
-        }
-
-        // ✅ 2️⃣ 여기: SVG 생성
-        const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="600" height="300">
-      <style>
-        text { font-family: Arial, sans-serif; font-size: 24px; fill: black; }
-      </style>
-      <rect width="100%" height="100%" fill="white"/>
-      <text x="30" y="150">${safeText}</text>
-    </svg>
-    `;
-
-        // ✅ 3️⃣ 여기: charset 포함된 Content-Type
-        res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
-
-        // ✅ 4️⃣ 여기: utf-8 버퍼 변환
-        const buffer = Buffer.from(svg, "utf-8");
-
-        res.send(buffer);
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("error");
-    }
-});
-
-// 이미지 생성 API (PNG)
-app.get("/image/png", async (req, res) => {
-    try {
-        // 안전한 디코딩 함수
-        function safeDecode(value, defaultValue) {
-            if (!value) return defaultValue;
-            try {
-                return decodeURIComponent(value);
-            } catch (e) {
-                return value;
-            }
-        }
-
-        let text = safeDecode(req.query.text, "안녕하세요");
-        let name = safeDecode(req.query.name, "");
-        let stat = safeDecode(req.query.stat, "stat");
         const imgNum = parseInt(req.query.img) || 1;
-
-        // SVG 특수문자 치환        
-
-        text = sanitizeSvgText(text);
-        name = sanitizeSvgText(name);
-        stat = sanitizeSvgText(stat);
-
+        const text = req.query.text || "안녕하세요";
+        const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
+        const stat = req.query.stat || "stat";  // stat 파라미터 추가
+
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -81,7 +27,7 @@ app.get("/image/png", async (req, res) => {
         const imagePath = path.join(mgDir, imageFile);
 
         if (!fs.existsSync(imagePath)) {
-            return res.status(404).send(`이미지를 찾을 없습니다: ${imageFile}`);
+            return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
         }
 
         // 이미지 메타데이터
@@ -213,7 +159,7 @@ app.get("/image/png", async (req, res) => {
         // 이미지 처리: 합성 후 출력 크기를 원본과 동일하게 고정
         let result = sharp(imagePath).composite([
             {
-                input: Buffer.from(String(textSvg || ""), "utf-8"),
+                input: Buffer.from(textSvg),
                 blend: 'over'
             }
         ]).resize(width, height, { fit: 'fill' });
@@ -269,15 +215,6 @@ function wrapText(text, maxChars) {
 
     if (current) lines.push(current);
     return lines.length > 0 ? lines : [text];
-}
-function sanitizeSvgText(str = "") {
-    return str
-        .replace(/%/g, "％")
-        .replace(/&/g, "＆")
-        .replace(/</g, "＜")
-        .replace(/>/g, "＞")
-        .replace(/\|/g, "｜")
-        .replace(/!/g, "！");
 }
 
 app.listen(PORT, () => {
