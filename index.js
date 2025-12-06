@@ -13,10 +13,14 @@ const mgDir = path.join(__dirname, "mg");
 app.get("/image", async (req, res) => {
     try {
         const imgNum = parseInt(req.query.img) || 1;
-        const text = req.query.text || "안녕하세요";
-        const name = req.query.name || "";
+        let text = req.query.text || "안녕하세요";
+        let name = req.query.name || "";
+        let stat = req.query.stat || "stat";
+
+        try { text = decodeURIComponent(text); } catch { }
+        try { name = decodeURIComponent(name); } catch { }
+        try { stat = decodeURIComponent(stat); } catch { }
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // stat 파라미터 추가
 
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -159,19 +163,19 @@ app.get("/image", async (req, res) => {
         // 이미지 처리: 합성 후 출력 크기를 원본과 동일하게 고정
         let result = sharp(imagePath).composite([
             {
-                input: Buffer.from(textSvg),
+                input: Buffer.from(textSvg, "utf-8"),
                 blend: 'over'
             }
         ]).resize(width, height, { fit: 'fill' });
 
-        res.type("image/png");
+        res.type("image/jpeg");
         res.set({
             "Cache-Control": "public, max-age=600",
             "ETag": false
         });
         let output;
         try {
-            output = await result.png().toBuffer();
+            output = await result.jpeg().toBuffer();
             console.log('생성된 이미지 바이트 길이:', output.length);
         } catch (e) {
             console.error('Sharp 변환 에러:', e);
