@@ -173,7 +173,7 @@ app.get("/image", async (req, res) => {
         // 이미지 처리: 합성 후 출력 크기를 원본과 동일하게 고정
         let result = sharp(imagePath).composite([
             {
-                input: Buffer.from(textSvg, "utf-8"),
+                input: Buffer.from(String(textSvg || ""), "utf-8"),
                 blend: 'over'
             }
         ]).resize(width, height, { fit: 'fill' });
