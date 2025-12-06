@@ -1,0 +1,19 @@
+{
+  "name": "image-generator",
+  "version": "1.0.0",
+  "description": "Canvas 기반 캐릭터 대화 이미지 생성",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sharp": "^0.33.1",
+    "jimp": "^0.22.12",
+    "opentype.js": "^1.3.4"
+  }
+}
