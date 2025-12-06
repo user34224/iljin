@@ -12,11 +12,20 @@ const mgDir = path.join(__dirname, "mg");
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
-        const imgNum = parseInt(req.query.img) || 1;
+        function safeDecode(v, def = "") {
+            try {
+                return decodeURIComponent(v);
+            } catch {
+                return v || def;
+            }
+        }
 
         let text = safeDecode(req.query.text, "안녕하세요");
         let name = safeDecode(req.query.name, "");
         let stat = safeDecode(req.query.stat, "stat");
+        const imgNum = parseInt(req.query.img) || 1;
+
+        // SVG 특수문자 치환        
 
         text = sanitizeSvgText(text);
         name = sanitizeSvgText(name);
@@ -229,13 +238,6 @@ function sanitizeSvgText(str = "") {
         .replace(/>/g, "＞")
         .replace(/\|/g, "｜")
         .replace(/!/g, "！");
-}
-function safeDecode(v, def = "") {
-    try {
-        return decodeURIComponent(v);
-    } catch (e) {
-        return v || def;
-    }
 }
 
 app.listen(PORT, () => {
