@@ -13,11 +13,16 @@ const mgDir = path.join(__dirname, "mg");
 app.get("/image", async (req, res) => {
     try {
         const imgNum = parseInt(req.query.img) || 1;
-        const text = req.query.text || "안녕하세요";
-        const name = req.query.name || "";
-        const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // stat 파라미터 추가
 
+        let text = safeDecode(req.query.text, "안녕하세요");
+        let name = safeDecode(req.query.name, "");
+        let stat = safeDecode(req.query.stat, "stat");
+
+        text = sanitizeSvgText(text);
+        name = sanitizeSvgText(name);
+        stat = sanitizeSvgText(stat);
+
+        const fontSize = parseInt(req.query.size) || 28;
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -215,6 +220,22 @@ function wrapText(text, maxChars) {
 
     if (current) lines.push(current);
     return lines.length > 0 ? lines : [text];
+}
+function sanitizeSvgText(str = "") {
+    return str
+        .replace(/%/g, "％")
+        .replace(/&/g, "＆")
+        .replace(/</g, "＜")
+        .replace(/>/g, "＞")
+        .replace(/\|/g, "｜")
+        .replace(/!/g, "！");
+}
+function safeDecode(v, def = "") {
+    try {
+        return decodeURIComponent(v);
+    } catch (e) {
+        return v || def;
+    }
 }
 
 app.listen(PORT, () => {
