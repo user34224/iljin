@@ -23,8 +23,10 @@ app.get("/image", async (req, res) => {
         let text = safeDecode(req.query.text, "안녕하세요");
         let name = safeDecode(req.query.name, "");
         let stat = safeDecode(req.query.stat, "stat");
+        const imgNum = parseInt(req.query.img) || 1;
 
-        // ✅ decode가 끝난 "이후에" sanitize
+        // SVG 특수문자 치환        
+
         text = sanitizeSvgText(text);
         name = sanitizeSvgText(name);
         stat = sanitizeSvgText(stat);
