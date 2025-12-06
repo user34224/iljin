@@ -55,7 +55,7 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // Express가 이미 디코딩해줌
+        const stat = req.query.stat || "stat";  // Express가 자동 디코딩
 
         // 캐시 키 생성
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
