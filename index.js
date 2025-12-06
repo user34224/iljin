@@ -27,7 +27,7 @@ app.get("/image", async (req, res) => {
         const imagePath = path.join(mgDir, imageFile);
 
         if (!fs.existsSync(imagePath)) {
-            return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
+            return res.status(404).send(`이미지를 찾을 없습니다: ${imageFile}`);
         }
 
         // 이미지 메타데이터
