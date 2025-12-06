@@ -23,10 +23,8 @@ app.get("/image", async (req, res) => {
         let text = safeDecode(req.query.text, "안녕하세요");
         let name = safeDecode(req.query.name, "");
         let stat = safeDecode(req.query.stat, "stat");
-        const imgNum = parseInt(req.query.img) || 1;
 
-        // SVG 특수문자 치환        
-
+        // ✅ decode가 끝난 "이후에" sanitize
         text = sanitizeSvgText(text);
         name = sanitizeSvgText(name);
         stat = sanitizeSvgText(stat);
@@ -173,7 +171,7 @@ app.get("/image", async (req, res) => {
         // 이미지 처리: 합성 후 출력 크기를 원본과 동일하게 고정
         let result = sharp(imagePath).composite([
             {
-                input: Buffer.from(textSvg),
+                input: Buffer.from(textSvg, "utf-8"),
                 blend: 'over'
             }
         ]).resize(width, height, { fit: 'fill' });
