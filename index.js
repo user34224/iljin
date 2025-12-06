@@ -9,13 +9,43 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
-// 안전한 디코딩 함수
-function safeDecode(str) {
-    try {
-        return decodeURIComponent(str);
-    } catch (e) {
-        return str; // 이미 디코딩된 경우 그대로 반환
+// XML escape
+function escapeXml(str) {
+    return str.replace(/[&<>"']/g, function (c) {
+        switch (c) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            case "'": return '&apos;';
+        }
+    });
+}
+
+// HTML 엔티티 변환 (유니코드 → &#코드;)
+function toEntity(str) {
+    return str.replace(/[\u00A0-\uFFFF]/g, c => `&#${c.charCodeAt(0)};`);
+}
+
+// 텍스트 줄바꿈
+function wrapText(text, maxChars) {
+    if (!text || maxChars <= 0) return [text];
+    if (text.length <= maxChars) return [text];
+
+    const lines = [];
+    let current = "";
+
+    for (let char of text) {
+        if (current.length >= maxChars) {
+            lines.push(current);
+            current = char;
+        } else {
+            current += char;
+        }
     }
+
+    if (current) lines.push(current);
+    return lines.length > 0 ? lines : [text];
 }
 
 // 이미지 생성 API
@@ -25,10 +55,9 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const statRaw = req.query.stat || "stat";
-        const stat = safeDecode(statRaw); // 안전하게 디코딩
+        const stat = req.query.stat || "stat";  // Express가 이미 디코딩해줌
 
-        // 캐시 키 생성 (파라미터 기반)
+        // 캐시 키 생성
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
 
@@ -54,14 +83,12 @@ app.get("/image", async (req, res) => {
         const boxPadding = 30;
         const lineHeight = fontSize_ + 8;
 
-        // 밑부분 반투명 검은색 박스 설정
         const boxHeight = Math.floor(height * 0.20);
         const boxMargin = 20;
         const boxTop = height - boxHeight - boxMargin;
         const boxWidth = width - (boxMargin * 2);
         const boxRadius = 15;
 
-        // 로컬 TTF 파일 경로
         const fontPath = path.join(__dirname, "font", "Nanum.ttf");
         let fontBase64 = null;
         try {
@@ -72,7 +99,6 @@ app.get("/image", async (req, res) => {
             console.warn('폰트 로드 실패:', e.message);
         }
 
-        // opentype으로 폰트 로드 시도
         let fontObj = null;
         try {
             if (fs.existsSync(fontPath)) {
@@ -85,7 +111,8 @@ app.get("/image", async (req, res) => {
             fontObj = null;
         }
 
-        let textSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+        let textSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
         <style>
             ${fontBase64 ? `@font-face { font-family: 'Nanum'; src: url('data:font/truetype;charset=utf-8;base64,${fontBase64}') format('truetype'); font-weight: normal; font-style: normal; }` : ''}
@@ -101,11 +128,9 @@ app.get("/image", async (req, res) => {
         const charWidth = fontSize_ * 0.55;
         const maxCharsPerLine = Math.floor(maxWidth / charWidth);
 
-        // stat 박스 정보
         const statFontSize = Math.floor(nameSize * 0.6);
         const statBoxX = boxMargin + padding + Math.floor(nameSize * name.length * 0.55) + 40;
 
-        // 이름 및 대사 표시
         const lines = text.split("\n");
 
         if (fontObj) {
@@ -135,7 +160,7 @@ app.get("/image", async (req, res) => {
         } else {
             if (name) {
                 textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
-                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
+                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${toEntity(stat)}</text>`;
             }
 
             lines.forEach((line) => {
@@ -167,38 +192,6 @@ app.get("/image", async (req, res) => {
         res.status(500).send(`에러: ${err.message}`);
     }
 });
-
-function escapeXml(str) {
-    return str.replace(/[&<>"']/g, function (c) {
-        switch (c) {
-            case '&': return '&amp;';
-            case '<': return '&lt;';
-            case '>': return '&gt;';
-            case '"': return '&quot;';
-            case "'": return '&apos;';
-        }
-    });
-}
-
-function wrapText(text, maxChars) {
-    if (!text || maxChars <= 0) return [text];
-    if (text.length <= maxChars) return [text];
-
-    const lines = [];
-    let current = "";
-
-    for (let char of text) {
-        if (current.length >= maxChars) {
-            lines.push(current);
-            current = char;
-        } else {
-            current += char;
-        }
-    }
-
-    if (current) lines.push(current);
-    return lines.length > 0 ? lines : [text];
-}
 
 app.listen(PORT, () => {
     console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
