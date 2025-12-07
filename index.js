@@ -110,7 +110,7 @@ app.get("/image", async (req, res) => {
                 textSvg += `<path d="${d}" fill="white" />`;
 
                 // stat 텍스트 추가 (이름 옆, 박스 없음)
-                const statPath = fontObj.getPath(stat, statBoxX + padding, nameY, statFontSize);
+                const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
                 const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
                 textSvg += `<path d="${statD}" fill="white" />`;
             }
@@ -135,7 +135,7 @@ app.get("/image", async (req, res) => {
                 textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
 
                 // stat 텍스트 추가 (이름 옆, 박스 없음)
-                textSvg += `<text x="${statBoxX + padding}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
+                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
             }
 
             lines.forEach((line) => {
