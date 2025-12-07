@@ -1,3 +1,4 @@
+// app.js - 최종 안전 처리 버전
 const express = require("express");
 const sharp = require("sharp");
 const opentype = require("opentype.js");
@@ -7,25 +8,25 @@ const fs = require("fs");
 const app = express();
 const PORT = 3000;
 const mgDir = path.join(__dirname, "mg");
-const MAX_STAT_LEN = 300;
+const MAX_STAT_LEN = 400;
 
-// 안전 디코드: 퍼센트 시퀀스가 있을 때만 한 번 디코드 시도, 실패하면 원문 유지
+// 퍼센트 인코딩이 실제로 있는 경우에만 한 번 디코드
 function safeDecodeOnce(value = "") {
     if (value === undefined || value === null) return "";
     let v = String(value);
     // + 를 공백으로
     v = v.replace(/\+/g, " ");
-    // 퍼센트 인코딩 패턴이 없으면 그대로 반환 (이미 디코딩된 경우)
-    if (!/%[0-9A-Fa-f]{2}/.test(v)) return v;
+    // 퍼센트 인코딩 패턴이 있는지 확인 (예: %E2%99%A5, %20 등)
+    if (!/%[0-9A-Fa-f]{2}/.test(v)) return v; // 이미 디코딩된 경우 그대로 반환
     try {
         return decodeURIComponent(v);
     } catch (e) {
-        // 잘못된 % 가 섞여있을 때는 안전하게 %를 치환 후 시도
+        // 잘못된 % 시퀀스가 섞여있으면 안전하게 % 치환 후 시도
         try {
             const sanitized = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
             return decodeURIComponent(sanitized);
         } catch (e2) {
-            return v;
+            return v; // 실패하면 원문 그대로 반환
         }
     }
 }
@@ -49,16 +50,16 @@ function wrapText(text, maxChars) {
     if (text.length <= maxChars) return [text];
     const lines = [];
     let current = "";
-    for (let char of text) {
+    for (let ch of text) {
         if (current.length >= maxChars) {
             lines.push(current);
-            current = char;
+            current = ch;
         } else {
-            current += char;
+            current += ch;
         }
     }
     if (current) lines.push(current);
-    return lines.length > 0 ? lines : [text];
+    return lines;
 }
 
 app.get("/image", async (req, res) => {
@@ -68,18 +69,16 @@ app.get("/image", async (req, res) => {
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // --- stat 안전 처리: 한 번만 디코드
+        // --- stat 안전 처리: 퍼센트 인코딩이 있으면 한 번만 디코드
         const statRaw = req.query.stat || "stat";
         let stat = safeDecodeOnce(statRaw);
         if (stat.length > MAX_STAT_LEN) stat = stat.slice(0, MAX_STAT_LEN) + "...";
 
-        // 로그로 들어오는 형태 확인 (문제 재현·디버깅용)
+        // 디버그 로그 (문제 재현 시 확인)
         console.log("REQ URL:", req.originalUrl);
         console.log("statRaw:", JSON.stringify(statRaw));
         console.log("statDecoded:", JSON.stringify(stat));
-        console.log("name:", JSON.stringify(name));
 
-        // 이미지 파일 준비
         const imageFile = `${imgNum}.jpg`;
         const imagePath = path.join(mgDir, imageFile);
         if (!fs.existsSync(imagePath)) return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
@@ -88,9 +87,9 @@ app.get("/image", async (req, res) => {
         const width = metadata.width;
         const height = metadata.height;
 
-        // 레이아웃 변수
-        let fontSize_ = Math.floor(fontSize);
-        let nameSize = Math.floor(fontSize * 1.3);
+        // 레이아웃
+        const fontSize_ = Math.floor(fontSize);
+        const nameSize = Math.floor(fontSize * 1.3);
         const padding = 40;
         const boxPadding = 30;
         const lineHeight = fontSize_ + 8;
@@ -100,13 +99,12 @@ app.get("/image", async (req, res) => {
         const boxWidth = width - boxMargin * 2;
         const boxRadius = 15;
 
-        // 폰트 로드(있으면 base64로 임베드)
+        // 폰트 로드 (있으면 base64로 임베드)
         const fontPath = path.join(__dirname, "font", "Nanum.ttf");
         let fontBase64 = null;
-        try { if (fs.existsSync(fontPath)) fontBase64 = fs.readFileSync(fontPath).toString("base64"); }
-        catch (e) { console.warn("폰트 로드 실패:", e.message); }
+        try { if (fs.existsSync(fontPath)) fontBase64 = fs.readFileSync(fontPath).toString("base64"); } catch (e) { console.warn("폰트 로드 실패:", e.message); }
 
-        // opentype 객체 로드 시도
+        // opentype 로드 시도
         let fontObj = null;
         try {
             if (fs.existsSync(fontPath)) {
@@ -119,7 +117,7 @@ app.get("/image", async (req, res) => {
             fontObj = null;
         }
 
-        // SVG 생성 시작
+        // SVG 생성
         let textSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <style>
@@ -182,10 +180,10 @@ app.get("/image", async (req, res) => {
 
         // 본문 텍스트 렌더링
         const lines = text.split("\n");
-        lines.forEach((line) => {
-            if (!line) return;
+        for (const line of lines) {
+            if (!line) continue;
             const wrapped = wrapText(line, maxCharsPerLine);
-            wrapped.forEach((ln) => {
+            for (const ln of wrapped) {
                 if (textY < boxTop + boxHeight - 15) {
                     if (fontObj) {
                         try {
@@ -202,8 +200,8 @@ app.get("/image", async (req, res) => {
                     }
                     textY += lineHeight;
                 }
-            });
-        });
+            }
+        }
 
         textSvg += `</svg>`;
 
