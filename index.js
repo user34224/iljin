@@ -9,6 +9,16 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
+// 안전 디코딩 함수
+function safeDecode(value = "") {
+    if (!value) return "";
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value; // 잘못된 % 시퀀스면 원문 그대로
+    }
+}
+
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
@@ -16,7 +26,10 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // Express가 이미 디코딩해줌
+
+        // stat만 안전 디코딩 적용
+        const statRaw = req.query.stat || "stat";
+        const stat = safeDecode(statRaw);
 
         // 캐시 키 생성
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -193,3 +206,4 @@ app.listen(PORT, () => {
     console.log(`📱 사용법: /image?img=1&name=민수&text=안녕하세요&size=28`);
     console.log(`✅ 준비 완료!`);
 });
+
