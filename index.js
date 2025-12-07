@@ -16,13 +16,10 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const statRaw = req.query.stat || "stat";  // 클라이언트에서 받는 stat (사용은 하되 렌더링은 name으로)
-
-        // 렌더링용 stat은 항상 name과 동일하게 사용
-        const stat = name || statRaw;
+        const stat = req.query.stat || "stat";  // stat 파라미터 추가
 
         // 캐시 키 생성 (파라미터 기반)
-        const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${statRaw}`;
+        const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
 
         // 이미지 파일 찾기
@@ -39,16 +36,15 @@ app.get("/image", async (req, res) => {
         const height = metadata.height;
 
         console.log(`📸 생성 중: ${imageFile} (${width}x${height})`);
-        console.log("받은 값:", { name, statRaw, fontSize, text });
 
         // 텍스트 SVG 생성
-        const fontSize_ = Math.floor(fontSize);
-        const nameSize = Math.floor(fontSize * 1.3);
+        let fontSize_ = Math.floor(fontSize);
+        let nameSize = Math.floor(fontSize * 1.3);
         const padding = 40;
         const boxPadding = 30;
         const lineHeight = fontSize_ + 8;
 
-        // 밑부분 반투명 검은색 박스 설정
+        // 밑부분 반투명 검은색 박스 설정 (더 낮춤)
         const boxHeight = Math.floor(height * 0.20);
         const boxMargin = 20;
         const boxTop = height - boxHeight - boxMargin;
@@ -79,7 +75,6 @@ app.get("/image", async (req, res) => {
             fontObj = null;
         }
 
-        // SVG 시작
         let textSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
         <style>
@@ -88,6 +83,7 @@ app.get("/image", async (req, res) => {
             .shadow { filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.8)); }
         </style>
     </defs>
+    <!-- 둥근 모서리 반투명 검은색 배경 박스 -->
     <rect x="${boxMargin}" y="${boxTop}" width="${boxWidth}" height="${boxHeight}" rx="${boxRadius}" ry="${boxRadius}" fill="black" opacity="0.6" />`;
 
         const nameY = boxTop + boxPadding + Math.floor(nameSize * 0.8);
@@ -96,42 +92,27 @@ app.get("/image", async (req, res) => {
         const charWidth = fontSize_ * 0.55;
         const maxCharsPerLine = Math.floor(maxWidth / charWidth);
 
-        // stat 위치와 크기: name과 다르게 설정 (오른쪽 상단에 작게 표시)
-        const statFontSize = Math.floor(nameSize * 0.8); // name보다 약간 작게
-        const statBoxWidth = Math.floor(statFontSize * 6);
-        const statBoxHeight = Math.floor(statFontSize * 1.6);
-        // stat은 오른쪽 끝에 배치 (name은 왼쪽)
-        const statBoxX = boxMargin + boxWidth - padding - statBoxWidth - 10;
+        // stat 박스 정보
+        const statFontSize = Math.floor(nameSize * 0.6);
+        const statBoxWidth = Math.floor(statFontSize * 4.5);
+        const statBoxHeight = Math.floor(statFontSize * 1.8);
+        const statBoxX = boxMargin + padding + Math.floor(nameSize * name.length * 0.55) + 40;
         const statBoxY = nameY - Math.floor(statFontSize * 0.8);
 
         // 이름 및 대사 표시: opentype으로 로드되면 path로 렌더링, 아니면 <text>로 폰트 사용
         const lines = text.split("\n");
 
         if (fontObj) {
-            // 이름을 path로 렌더링 (왼쪽)
+            // 이름을 path로 렌더링
             if (name) {
-                try {
-                    const namePath = fontObj.getPath(name, boxMargin + padding, nameY, nameSize);
-                    const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
-                    textSvg += `<path d="${d}" fill="white" />`;
-                } catch (e) {
-                    console.warn("name path render failed:", e && e.message);
-                    textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
-                }
-            }
+                const namePath = fontObj.getPath(name, boxMargin + padding, nameY, nameSize);
+                const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
+                textSvg += `<path d="${d}" fill="white" />`;
 
-            // stat은 항상 name과 동일한 값으로, 오른쪽에 작게 표시 (path 시도, 실패하면 <text>로 폴백)
-            try {
+                // stat 텍스트 추가 (이름 옆, 박스 없음)
                 const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
                 const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
-                if (statD && statD.length > 0) {
-                    textSvg += `<path d="${statD}" fill="white" />`;
-                } else {
-                    throw new Error("empty stat path");
-                }
-            } catch (e) {
-                console.warn("stat path render failed:", e && e.message);
-                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
+                textSvg += `<path d="${statD}" fill="white" />`;
             }
 
             // 대사들을 path로 렌더링
@@ -140,14 +121,9 @@ app.get("/image", async (req, res) => {
                     const wrappedLines = wrapText(line, maxCharsPerLine);
                     wrappedLines.forEach((wrappedLine) => {
                         if (textY < boxTop + boxHeight - 15) {
-                            try {
-                                const p = fontObj.getPath(wrappedLine, boxMargin + padding, textY, fontSize_);
-                                const dd = p.toPathData ? p.toPathData(2) : p.toSVG();
-                                textSvg += `<path d="${dd}" fill="white" />`;
-                            } catch (e) {
-                                console.warn("line path render failed:", e && e.message);
-                                textSvg += `<text x="${boxMargin + padding}" y="${textY}" font-size="${fontSize_}" fill="white" class="text shadow">${escapeXml(wrappedLine)}</text>`;
-                            }
+                            const p = fontObj.getPath(wrappedLine, boxMargin + padding, textY, fontSize_);
+                            const dd = p.toPathData ? p.toPathData(2) : p.toSVG();
+                            textSvg += `<path d="${dd}" fill="white" />`;
                             textY += lineHeight;
                         }
                     });
@@ -157,10 +133,10 @@ app.get("/image", async (req, res) => {
             // 폰트가 없으면 일반 text 엘리먼트 사용
             if (name) {
                 textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
-            }
 
-            // stat은 name과 동일한 값으로 오른쪽에 표시
-            textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
+                // stat 텍스트 추가 (이름 옆, 박스 없음)
+                textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
+            }
 
             lines.forEach((line) => {
                 if (line.trim()) {
@@ -210,14 +186,13 @@ app.get("/image", async (req, res) => {
 });
 
 function escapeXml(str) {
-    return String(str || "").replace(/[&<>"']/g, function (c) {
+    return str.replace(/[&<>"']/g, function (c) {
         switch (c) {
             case '&': return '&amp;';
             case '<': return '&lt;';
             case '>': return '&gt;';
             case '"': return '&quot;';
             case "'": return '&apos;';
-            default: return c;
         }
     });
 }
@@ -244,6 +219,6 @@ function wrapText(text, maxChars) {
 
 app.listen(PORT, () => {
     console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
-    console.log(`📱 사용법: /image?img=1&name=민수&text=안녕하세요&size=28&stat=임의값`);
+    console.log(`📱 사용법: /image?img=1&name=민수&text=안녕하세요&size=28`);
     console.log(`✅ 준비 완료!`);
 });
