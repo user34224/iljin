@@ -9,14 +9,35 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
-// 안전 디코딩 함수
-function safeDecode(value = "") {
-    if (!value) return "";
-    try {
-        return decodeURIComponent(value);
-    } catch {
-        return value; // 잘못된 % 시퀀스면 원문 그대로
+/**
+ * Normalize a query param so it displays correctly across PC/mobile:
+ * - Replace '+' with space
+ * - Sanitize malformed '%' sequences
+ * - Decode repeatedly until the value stabilizes (max 3 passes)
+ */
+function normalizeParam(value = "") {
+    let v = String(value);
+    if (!v) return "";
+
+    // Some clients use '+' for space
+    v = v.replace(/\+/g, " ");
+
+    // Guard against malformed % (e.g., lone % or bad sequences)
+    v = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+
+    // Try up to 3 decode passes to handle double-encoded inputs
+    for (let i = 0; i < 3; i++) {
+        try {
+            const decoded = decodeURIComponent(v);
+            if (decoded === v) break; // stabilized
+            v = decoded;
+        } catch {
+            // If decoding fails, sanitize again and stop
+            v = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+            break;
+        }
     }
+    return v;
 }
 
 app.get("/image", async (req, res) => {
@@ -26,11 +47,14 @@ app.get("/image", async (req, res) => {
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // stat만 안전 디코딩 적용
+        // Only stat needs robust normalization (PC/mobile discrepancies)
         const statRaw = req.query.stat || "stat";
-        const stat = safeDecode(statRaw);
+        const stat = normalizeParam(statRaw);
 
-        // 캐시 키 생성
+        // DEBUG: log what mobile/PC actually send
+        console.log("statRaw:", statRaw);
+        console.log("statNormalized:", stat);
+
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
 
@@ -229,7 +253,7 @@ function wrapText(text, maxChars) {
 app.listen(PORT, () => {
     console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
     console.log(
-        `📱 사용법: /image?img=1&name=민수&text=안녕하세요&stat=|♥호감도 10%♥|`
+        `📱 사용법 예: /image?img=1&name=수아&text=비 맞았어...&stat=|♥호감도 10%♥|`
     );
     console.log(`✅ 준비 완료!`);
 });
