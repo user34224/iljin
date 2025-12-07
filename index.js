@@ -9,32 +9,14 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
-// 안전 디코딩 함수
-function sanitizePercent(value = "") {
-    return String(value).replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
-}
-function safeGetQuery(value = "") {
-    if (!value) return "";
-    let v = String(value).replace(/\+/g, " ");
-    v = sanitizePercent(v);
-    try {
-        return decodeURIComponent(v);
-    } catch {
-        return v;
-    }
-}
-
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
         const imgNum = parseInt(req.query.img) || 1;
-        const text = safeGetQuery(req.query.text || "안녕하세요");
-        const name = safeGetQuery(req.query.name || "");
+        const text = req.query.text || "안녕하세요";
+        const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        let stat = safeGetQuery(req.query.stat || "stat");
-
-        // 하트 문자 엔티티 변환 (폰트 깨짐 방지)
-        stat = stat.replace(/♥/g, "&#9829;");
+        const stat = req.query.stat || "stat";  // Express가 이미 디코딩해줌
 
         // 캐시 키 생성
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -209,5 +191,5 @@ function wrapText(text, maxChars) {
 app.listen(PORT, () => {
     console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
     console.log(`📱 사용법: /image?img=1&name=민수&text=안녕하세요&size=28`);
-    console.log(`   - img: 이미지 번호 (mg 폴더 내 이미지 파일명, 기본값: 1)`);
+    console.log(`✅ 준비 완료!`);
 });
