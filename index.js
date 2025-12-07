@@ -9,14 +9,24 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
+// 안전 디코딩 함수
+function safeDecode(value = "") {
+    try {
+        // +를 공백으로 치환 후 디코딩
+        return decodeURIComponent(value.replace(/\+/g, "%20"));
+    } catch {
+        return value; // 깨지면 원문 그대로 사용
+    }
+}
+
 // 이미지 생성 API
 app.get("/image", async (req, res) => {
     try {
         const imgNum = parseInt(req.query.img) || 1;
-        const text = req.query.text || "안녕하세요";
-        const name = req.query.name || "";
+        const text = safeDecode(req.query.text || "안녕하세요");
+        const name = safeDecode(req.query.name || "");
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // stat 파라미터 추가
+        const stat = safeDecode(req.query.stat || "stat");  // stat 파라미터도 안전 디코딩
 
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -44,14 +54,12 @@ app.get("/image", async (req, res) => {
         const boxPadding = 30;
         const lineHeight = fontSize_ + 8;
 
-        // 밑부분 반투명 검은색 박스 설정 (더 낮춤)
         const boxHeight = Math.floor(height * 0.20);
         const boxMargin = 20;
         const boxTop = height - boxHeight - boxMargin;
         const boxWidth = width - (boxMargin * 2);
         const boxRadius = 15;
 
-        // 로컬 TTF 파일 경로
         const fontPath = path.join(__dirname, "font", "Nanum.ttf");
         let fontBase64 = null;
         try {
@@ -62,7 +70,6 @@ app.get("/image", async (req, res) => {
             console.warn('폰트 로드 실패:', e.message);
         }
 
-        // opentype으로 폰트 로드 시도 (텍스트를 path로 렌더링)
         let fontObj = null;
         try {
             if (fs.existsSync(fontPath)) {
@@ -83,7 +90,6 @@ app.get("/image", async (req, res) => {
             .shadow { filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.8)); }
         </style>
     </defs>
-    <!-- 둥근 모서리 반투명 검은색 배경 박스 -->
     <rect x="${boxMargin}" y="${boxTop}" width="${boxWidth}" height="${boxHeight}" rx="${boxRadius}" ry="${boxRadius}" fill="black" opacity="0.6" />`;
 
         const nameY = boxTop + boxPadding + Math.floor(nameSize * 0.8);
@@ -92,30 +98,22 @@ app.get("/image", async (req, res) => {
         const charWidth = fontSize_ * 0.55;
         const maxCharsPerLine = Math.floor(maxWidth / charWidth);
 
-        // stat 박스 정보
         const statFontSize = Math.floor(nameSize * 0.6);
-        const statBoxWidth = Math.floor(statFontSize * 4.5);
-        const statBoxHeight = Math.floor(statFontSize * 1.8);
         const statBoxX = boxMargin + padding + Math.floor(nameSize * name.length * 0.55) + 40;
-        const statBoxY = nameY - Math.floor(statFontSize * 0.8);
 
-        // 이름 및 대사 표시: opentype으로 로드되면 path로 렌더링, 아니면 <text>로 폰트 사용
         const lines = text.split("\n");
 
         if (fontObj) {
-            // 이름을 path로 렌더링
             if (name) {
                 const namePath = fontObj.getPath(name, boxMargin + padding, nameY, nameSize);
                 const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
                 textSvg += `<path d="${d}" fill="white" />`;
 
-                // stat 텍스트 추가 (이름 옆, 박스 없음)
                 const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
                 const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
                 textSvg += `<path d="${statD}" fill="white" />`;
             }
 
-            // 대사들을 path로 렌더링
             lines.forEach((line) => {
                 if (line.trim()) {
                     const wrappedLines = wrapText(line, maxCharsPerLine);
@@ -130,11 +128,8 @@ app.get("/image", async (req, res) => {
                 }
             });
         } else {
-            // 폰트가 없으면 일반 text 엘리먼트 사용
             if (name) {
                 textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
-
-                // stat 텍스트 추가 (이름 옆, 박스 없음)
                 textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
             }
 
@@ -153,26 +148,15 @@ app.get("/image", async (req, res) => {
 
         textSvg += `</svg>`;
 
-        console.log('폰트 base64 존재:', !!fontBase64);
-        console.log('SVG 길이:', textSvg.length);
-
-        // 이미지 처리: 합성 후 출력 크기를 원본과 동일하게 고정
         let result = sharp(imagePath).composite([
-            {
-                input: Buffer.from(textSvg),
-                blend: 'over'
-            }
+            { input: Buffer.from(textSvg), blend: 'over' }
         ]).resize(width, height, { fit: 'fill' });
 
         res.type("image/png");
-        res.set({
-            "Cache-Control": "public, max-age=600",
-            "ETag": false
-        });
+        res.set({ "Cache-Control": "public, max-age=600", "ETag": false });
         let output;
         try {
             output = await result.png().toBuffer();
-            console.log('생성된 이미지 바이트 길이:', output.length);
         } catch (e) {
             console.error('Sharp 변환 에러:', e);
             throw e;
