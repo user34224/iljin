@@ -6,21 +6,30 @@ const fs = require("fs");
 
 const app = express();
 const PORT = 3000;
-
 const mgDir = path.join(__dirname, "mg");
-const MAX_STAT_LEN = 300; // 필요시 조정
+const MAX_STAT_LEN = 300;
 
-// 한 번만 안전 디코딩 시도
-function safeDecode(value = "") {
+// 안전 디코드: 퍼센트 시퀀스가 있을 때만 한 번 디코드 시도, 실패하면 원문 유지
+function safeDecodeOnce(value = "") {
     if (value === undefined || value === null) return "";
+    let v = String(value);
+    // + 를 공백으로
+    v = v.replace(/\+/g, " ");
+    // 퍼센트 인코딩 패턴이 없으면 그대로 반환 (이미 디코딩된 경우)
+    if (!/%[0-9A-Fa-f]{2}/.test(v)) return v;
     try {
-        return decodeURIComponent(String(value));
-    } catch {
-        return String(value);
+        return decodeURIComponent(v);
+    } catch (e) {
+        // 잘못된 % 가 섞여있을 때는 안전하게 %를 치환 후 시도
+        try {
+            const sanitized = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+            return decodeURIComponent(sanitized);
+        } catch (e2) {
+            return v;
+        }
     }
 }
 
-// XML 이스케이프 (안전하게 문자열로 변환)
 function escapeXml(input) {
     const str = String(input || "");
     return str.replace(/[&<>"']/g, function (c) {
@@ -35,14 +44,11 @@ function escapeXml(input) {
     });
 }
 
-// 간단한 텍스트 래핑
 function wrapText(text, maxChars) {
     if (!text || maxChars <= 0) return [text];
     if (text.length <= maxChars) return [text];
-
     const lines = [];
     let current = "";
-
     for (let char of text) {
         if (current.length >= maxChars) {
             lines.push(current);
@@ -51,48 +57,36 @@ function wrapText(text, maxChars) {
             current += char;
         }
     }
-
     if (current) lines.push(current);
     return lines.length > 0 ? lines : [text];
 }
 
 app.get("/image", async (req, res) => {
     try {
-        // 기본 파라미터
         const imgNum = parseInt(req.query.img) || 1;
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // stat은 한 번만 안전 디코딩
+        // --- stat 안전 처리: 한 번만 디코드
         const statRaw = req.query.stat || "stat";
-        let stat = safeDecode(statRaw);
+        let stat = safeDecodeOnce(statRaw);
+        if (stat.length > MAX_STAT_LEN) stat = stat.slice(0, MAX_STAT_LEN) + "...";
 
-        // 길이 제한(너무 길면 잘라서 처리)
-        if (stat.length > MAX_STAT_LEN) {
-            stat = stat.slice(0, MAX_STAT_LEN) + "...";
-        }
-
-        // 캐시 키
-        const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
-        res.set("Cache-Control", "public, max-age=31536000, immutable");
-
-        const imageFile = `${imgNum}.jpg`;
-        const imagePath = path.join(mgDir, imageFile);
-
-        if (!fs.existsSync(imagePath)) {
-            return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
-        }
-
-        const metadata = await sharp(imagePath).metadata();
-        const width = metadata.width;
-        const height = metadata.height;
-
-        // 디버그 로그
+        // 로그로 들어오는 형태 확인 (문제 재현·디버깅용)
         console.log("REQ URL:", req.originalUrl);
         console.log("statRaw:", JSON.stringify(statRaw));
         console.log("statDecoded:", JSON.stringify(stat));
         console.log("name:", JSON.stringify(name));
+
+        // 이미지 파일 준비
+        const imageFile = `${imgNum}.jpg`;
+        const imagePath = path.join(mgDir, imageFile);
+        if (!fs.existsSync(imagePath)) return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
+
+        const metadata = await sharp(imagePath).metadata();
+        const width = metadata.width;
+        const height = metadata.height;
 
         // 레이아웃 변수
         let fontSize_ = Math.floor(fontSize);
@@ -100,7 +94,6 @@ app.get("/image", async (req, res) => {
         const padding = 40;
         const boxPadding = 30;
         const lineHeight = fontSize_ + 8;
-
         const boxHeight = Math.floor(height * 0.20);
         const boxMargin = 20;
         const boxTop = height - boxHeight - boxMargin;
@@ -110,13 +103,8 @@ app.get("/image", async (req, res) => {
         // 폰트 로드(있으면 base64로 임베드)
         const fontPath = path.join(__dirname, "font", "Nanum.ttf");
         let fontBase64 = null;
-        try {
-            if (fs.existsSync(fontPath)) {
-                fontBase64 = fs.readFileSync(fontPath).toString("base64");
-            }
-        } catch (e) {
-            console.warn("폰트 로드 실패:", e.message);
-        }
+        try { if (fs.existsSync(fontPath)) fontBase64 = fs.readFileSync(fontPath).toString("base64"); }
+        catch (e) { console.warn("폰트 로드 실패:", e.message); }
 
         // opentype 객체 로드 시도
         let fontObj = null;
@@ -131,7 +119,7 @@ app.get("/image", async (req, res) => {
             fontObj = null;
         }
 
-        // SVG 시작
+        // SVG 생성 시작
         let textSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <style>
@@ -153,21 +141,16 @@ app.get("/image", async (req, res) => {
         const statBoxX = boxMargin + padding + Math.floor(name.length * nameSize * 0.55) + 40;
         const statMaxX = boxMargin + boxWidth - padding - 10;
         const statX = Math.min(statBoxX, statMaxX);
-
-        // 안전한 stat 텍스트
         const statText = escapeXml(stat);
 
-        // name 렌더링 (opentype path 시도, 실패하면 <text>로 폴백)
+        // name 렌더링 (opentype 시도, 실패하면 <text>로 폴백)
         if (name) {
             if (fontObj) {
                 try {
                     const namePath = fontObj.getPath(name, boxMargin + padding, nameY, nameSize);
                     const d = namePath && (namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG());
-                    if (d && d.length > 0) {
-                        textSvg += `<path d="${d}" fill="white" />`;
-                    } else {
-                        throw new Error("empty name path");
-                    }
+                    if (d && d.length > 0) textSvg += `<path d="${d}" fill="white" />`;
+                    else throw new Error("empty name path");
                 } catch (e) {
                     console.warn("name path render failed:", e && e.message);
                     textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
@@ -177,17 +160,14 @@ app.get("/image", async (req, res) => {
             }
         }
 
-        // stat 렌더링: opentype path 시도, 실패하면 <text>로 폴백. 절대 예외를 던지지 않음
+        // stat 렌더링: 절대 예외를 던지지 않음, 실패하면 <text>로 폴백
         try {
             if (fontObj) {
                 try {
-                    const statPath = fontObj.getPath(stat, statX, nameY, statFontSize);
+                    const statPath = fontObj.getPath(String(stat), statX, nameY, statFontSize);
                     const statD = statPath && (statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG());
-                    if (statD && statD.length > 0) {
-                        textSvg += `<path d="${statD}" fill="white" />`;
-                    } else {
-                        throw new Error("empty stat path");
-                    }
+                    if (statD && statD.length > 0) textSvg += `<path d="${statD}" fill="white" />`;
+                    else throw new Error("empty stat path");
                 } catch (e) {
                     console.warn("stat path render failed:", e && e.message);
                     textSvg += `<text x="${statX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${statText}</text>`;
@@ -196,12 +176,11 @@ app.get("/image", async (req, res) => {
                 textSvg += `<text x="${statX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${statText}</text>`;
             }
         } catch (e) {
-            // 안전망: 어떤 예외가 와도 stat은 텍스트로 출력
             console.error("unexpected stat render error:", e && e.message);
             textSvg += `<text x="${statX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${statText}</text>`;
         }
 
-        // 본문 텍스트 렌더링 (wrap 적용)
+        // 본문 텍스트 렌더링
         const lines = text.split("\n");
         lines.forEach((line) => {
             if (!line) return;
@@ -212,11 +191,8 @@ app.get("/image", async (req, res) => {
                         try {
                             const p = fontObj.getPath(ln, boxMargin + padding, textY, fontSize_);
                             const dd = p && (p.toPathData ? p.toPathData(2) : p.toSVG());
-                            if (dd && dd.length > 0) {
-                                textSvg += `<path d="${dd}" fill="white" />`;
-                            } else {
-                                throw new Error("empty line path");
-                            }
+                            if (dd && dd.length > 0) textSvg += `<path d="${dd}" fill="white" />`;
+                            else throw new Error("empty line path");
                         } catch (e) {
                             console.warn("line path render failed:", e && e.message);
                             textSvg += `<text x="${boxMargin + padding}" y="${textY}" font-size="${fontSize_}" fill="white" class="text shadow">${escapeXml(ln)}</text>`;
@@ -243,13 +219,7 @@ app.get("/image", async (req, res) => {
         try {
             output = await result.png().toBuffer();
         } catch (e) {
-            // 디버그용 SVG 저장
-            try {
-                fs.writeFileSync(path.join(__dirname, "debug.svg"), textSvg, "utf8");
-                console.error("Sharp 변환 에러, debug.svg 생성:", e && e.message);
-            } catch (fsErr) {
-                console.error("debug.svg 저장 실패:", fsErr && fsErr.message);
-            }
+            try { fs.writeFileSync(path.join(__dirname, "debug.svg"), textSvg, "utf8"); console.error("Sharp 변환 에러, debug.svg 생성:", e && e.message); } catch (fsErr) { console.error("debug.svg 저장 실패:", fsErr && fsErr.message); }
             throw e;
         }
 
@@ -262,6 +232,4 @@ app.get("/image", async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
-    console.log(`📱 사용법 예: /image?img=1&name=수아&text=안녕하세요&stat=|♥호감도 10%♥|`);
-    console.log(`✅ 준비 완료!`);
 });
