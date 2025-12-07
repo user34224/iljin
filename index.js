@@ -9,31 +9,24 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
-/**
- * Normalize a query param so it displays correctly across PC/mobile:
- * - Replace '+' with space
- * - Sanitize malformed '%' sequences
- * - Decode repeatedly until the value stabilizes (max 3 passes)
- */
+// 안전 디코딩 함수 (PC/모바일 모두 대응)
 function normalizeParam(value = "") {
     let v = String(value);
     if (!v) return "";
 
-    // Some clients use '+' for space
+    // + → 공백
     v = v.replace(/\+/g, " ");
 
-    // Guard against malformed % (e.g., lone % or bad sequences)
+    // 잘못된 % 시퀀스 방지
     v = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
 
-    // Try up to 3 decode passes to handle double-encoded inputs
+    // 최대 2~3번까지 디코딩 시도 (이중 인코딩 대응)
     for (let i = 0; i < 3; i++) {
         try {
             const decoded = decodeURIComponent(v);
-            if (decoded === v) break; // stabilized
+            if (decoded === v) break;
             v = decoded;
         } catch {
-            // If decoding fails, sanitize again and stop
-            v = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
             break;
         }
     }
@@ -47,14 +40,11 @@ app.get("/image", async (req, res) => {
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // Only stat needs robust normalization (PC/mobile discrepancies)
+        // stat만 normalize 처리
         const statRaw = req.query.stat || "stat";
         const stat = normalizeParam(statRaw);
 
-        // DEBUG: log what mobile/PC actually send
-        console.log("statRaw:", statRaw);
-        console.log("statNormalized:", stat);
-
+        // 캐시 키
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
         res.set("Cache-Control", "public, max-age=31536000, immutable");
 
@@ -70,6 +60,8 @@ app.get("/image", async (req, res) => {
         const height = metadata.height;
 
         console.log(`📸 생성 중: ${imageFile} (${width}x${height})`);
+        console.log("statRaw:", statRaw);
+        console.log("statNormalized:", stat);
 
         let fontSize_ = Math.floor(fontSize);
         let nameSize = Math.floor(fontSize * 1.3);
@@ -126,7 +118,7 @@ app.get("/image", async (req, res) => {
 
         const statFontSize = Math.floor(nameSize * 0.6);
         const statBoxX =
-            boxMargin + padding + Math.floor(nameSize * name.length * 0.55) + 40;
+            boxMargin + padding + Math.floor(nameSize.length * nameSize * 0.55) + 40;
 
         const lines = text.split("\n");
 
@@ -245,15 +237,10 @@ function wrapText(text, maxChars) {
             current += char;
         }
     }
-
     if (current) lines.push(current);
-    return lines.length > 0 ? lines : [text];
+    return lines;
 }
 
 app.listen(PORT, () => {
-    console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
-    console.log(
-        `📱 사용법 예: /image?img=1&name=수아&text=비 맞았어...&stat=|♥호감도 10%♥|`
-    );
-    console.log(`✅ 준비 완료!`);
+    console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
 });
