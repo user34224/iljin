@@ -16,7 +16,9 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = req.query.stat || "stat";  // stat 파라미터 추가
+
+        // stat을 name과 동일하게 설정 (요청된 stat 무시)
+        const stat = name || "stat";
 
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -92,7 +94,7 @@ app.get("/image", async (req, res) => {
         const charWidth = fontSize_ * 0.55;
         const maxCharsPerLine = Math.floor(maxWidth / charWidth);
 
-        // stat 박스 정보
+        // stat 박스 정보 (위치와 크기 유지)
         const statFontSize = Math.floor(nameSize * 0.6);
         const statBoxWidth = Math.floor(statFontSize * 4.5);
         const statBoxHeight = Math.floor(statFontSize * 1.8);
@@ -109,7 +111,7 @@ app.get("/image", async (req, res) => {
                 const d = namePath.toPathData ? namePath.toPathData(2) : namePath.toSVG();
                 textSvg += `<path d="${d}" fill="white" />`;
 
-                // stat 텍스트 추가 (이름 옆, 박스 없음)
+                // stat 텍스트 추가 (이름 옆, stat을 name과 동일하게 사용)
                 const statPath = fontObj.getPath(stat, statBoxX, nameY, statFontSize);
                 const statD = statPath.toPathData ? statPath.toPathData(2) : statPath.toSVG();
                 textSvg += `<path d="${statD}" fill="white" />`;
@@ -134,7 +136,7 @@ app.get("/image", async (req, res) => {
             if (name) {
                 textSvg += `<text x="${boxMargin + padding}" y="${nameY}" font-size="${nameSize}" fill="white" class="text shadow">${escapeXml(name)}</text>`;
 
-                // stat 텍스트 추가 (이름 옆, 박스 없음)
+                // stat 텍스트 추가 (이름 옆, stat을 name과 동일하게 사용)
                 textSvg += `<text x="${statBoxX}" y="${nameY}" font-size="${statFontSize}" fill="white" class="text shadow">${escapeXml(stat)}</text>`;
             }
 
@@ -222,3 +224,4 @@ app.listen(PORT, () => {
     console.log(`📱 사용법: /image?img=1&name=민수&text=안녕하세요&size=28`);
     console.log(`✅ 준비 완료!`);
 });
+
