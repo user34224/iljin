@@ -16,7 +16,7 @@ app.get("/image", async (req, res) => {
         const text = req.query.text || "안녕하세요";
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
-        const stat = decodeURIComponent(req.query.stat || "st");  // stat 파라미터 추가
+        const stat = req.query.stat || "stat";  // stat 파라미터 추가
 
         // 캐시 키 생성 (파라미터 기반)
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
