@@ -10,25 +10,37 @@ const PORT = 3000;
 const mgDir = path.join(__dirname, "mg");
 const MAX_STAT_LEN = 400;
 
-// 퍼센트 인코딩이 실제로 있는 경우에만 한 번 디코드
-function safeDecodeOnce(value = "") {
-    if (value === undefined || value === null) return "";
-    let v = String(value);
-    // + 를 공백으로
-    v = v.replace(/\+/g, " ");
-    // 퍼센트 인코딩 패턴이 있는지 확인 (예: %E2%99%A5, %20 등)
-    if (!/%[0-9A-Fa-f]{2}/.test(v)) return v; // 이미 디코딩된 경우 그대로 반환
-    try {
-        return decodeURIComponent(v);
-    } catch (e) {
-        // 잘못된 % 시퀀스가 섞여있으면 안전하게 % 치환 후 시도
+// robust stat 디코드: 퍼센트 인코딩이 있으면 한 번만 디코드 시도,
+// 디코드 결과가 비정상적이면 원본 복구
+function robustDecodeStat(raw) {
+    if (raw === undefined || raw === null) return "";
+    let orig = String(raw);
+    orig = orig.replace(/\+/g, " ");
+    // 퍼센트 인코딩 패턴이 없으면 이미 디코딩된 것으로 간주
+    if (!/%[0-9A-Fa-f]{2}/.test(orig)) return orig;
+
+    let v = orig;
+    for (let i = 0; i < 2; i++) {
         try {
-            const sanitized = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
-            return decodeURIComponent(sanitized);
-        } catch (e2) {
-            return v; // 실패하면 원문 그대로 반환
+            const decoded = decodeURIComponent(v);
+            // 비정상 문자(널, 제어문자, replacement char) 있으면 원본 반환
+            if (!decoded || /[\u0000-\u001F\u007F]|�/.test(decoded)) return orig;
+            // 안정화되면 반환
+            if (decoded === v) return decoded;
+            v = decoded;
+        } catch (e) {
+            // 잘못된 % 시퀀스가 섞여있으면 %를 안전하게 치환 후 시도
+            try {
+                const sanitized = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+                const decoded2 = decodeURIComponent(sanitized);
+                if (!decoded2 || /[\u0000-\u001F\u007F]|�/.test(decoded2)) return orig;
+                return decoded2;
+            } catch (e2) {
+                return orig;
+            }
         }
     }
+    return v || orig;
 }
 
 function escapeXml(input) {
@@ -69,16 +81,18 @@ app.get("/image", async (req, res) => {
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // --- stat 안전 처리: 퍼센트 인코딩이 있으면 한 번만 디코드
-        const statRaw = req.query.stat || "stat";
-        let stat = safeDecodeOnce(statRaw);
-        if (stat.length > MAX_STAT_LEN) stat = stat.slice(0, MAX_STAT_LEN) + "...";
+        // --- stat 안전 처리: robustDecodeStat 사용
+        const statRaw = req.query.stat;
+        const stat = robustDecodeStat(statRaw || "stat");
+        const statSafeForLog = stat.length > 200 ? stat.slice(0, 200) + "..." : stat;
 
-        // 디버그 로그 (문제 재현 시 확인)
+        // 디버그 로그 (핸드폰/PC 차이 확인용)
         console.log("REQ URL:", req.originalUrl);
         console.log("statRaw:", JSON.stringify(statRaw));
-        console.log("statDecoded:", JSON.stringify(stat));
+        console.log("statDecoded:", JSON.stringify(statSafeForLog));
+        console.log("name:", JSON.stringify(name));
 
+        // 이미지 파일 준비
         const imageFile = `${imgNum}.jpg`;
         const imagePath = path.join(mgDir, imageFile);
         if (!fs.existsSync(imagePath)) return res.status(404).send(`이미지를 찾을 수 없습니다: ${imageFile}`);
@@ -87,7 +101,7 @@ app.get("/image", async (req, res) => {
         const width = metadata.width;
         const height = metadata.height;
 
-        // 레이아웃
+        // 레이아웃 변수
         const fontSize_ = Math.floor(fontSize);
         const nameSize = Math.floor(fontSize * 1.3);
         const padding = 40;
@@ -102,7 +116,8 @@ app.get("/image", async (req, res) => {
         // 폰트 로드 (있으면 base64로 임베드)
         const fontPath = path.join(__dirname, "font", "Nanum.ttf");
         let fontBase64 = null;
-        try { if (fs.existsSync(fontPath)) fontBase64 = fs.readFileSync(fontPath).toString("base64"); } catch (e) { console.warn("폰트 로드 실패:", e.message); }
+        try { if (fs.existsSync(fontPath)) fontBase64 = fs.readFileSync(fontPath).toString("base64"); }
+        catch (e) { console.warn("폰트 로드 실패:", e.message); }
 
         // opentype 로드 시도
         let fontObj = null;
@@ -117,7 +132,7 @@ app.get("/image", async (req, res) => {
             fontObj = null;
         }
 
-        // SVG 생성
+        // SVG 시작
         let textSvg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <style>
