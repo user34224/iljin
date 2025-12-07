@@ -9,28 +9,14 @@ const PORT = 3000;
 
 const mgDir = path.join(__dirname, "mg");
 
-// 안전 디코딩 함수 (PC/모바일 모두 대응)
-function normalizeParam(value = "") {
-    let v = String(value);
-    if (!v) return "";
-
-    // + → 공백
-    v = v.replace(/\+/g, " ");
-
-    // 잘못된 % 시퀀스 방지
-    v = v.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
-
-    // 최대 2~3번까지 디코딩 시도 (이중 인코딩 대응)
-    for (let i = 0; i < 3; i++) {
-        try {
-            const decoded = decodeURIComponent(v);
-            if (decoded === v) break;
-            v = decoded;
-        } catch {
-            break;
-        }
+// 안전 디코딩 함수 (한 번만 시도)
+function safeDecode(value = "") {
+    if (!value) return "";
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value; // 잘못된 % 시퀀스면 원문 그대로
     }
-    return v;
 }
 
 app.get("/image", async (req, res) => {
@@ -40,9 +26,9 @@ app.get("/image", async (req, res) => {
         const name = req.query.name || "";
         const fontSize = parseInt(req.query.size) || 28;
 
-        // stat만 normalize 처리
+        // stat만 안전 디코딩 적용
         const statRaw = req.query.stat || "stat";
-        const stat = normalizeParam(statRaw);
+        const stat = safeDecode(statRaw);
 
         // 캐시 키
         const cacheKey = `${imgNum}_${name}_${text}_${fontSize}_${stat}`;
@@ -61,7 +47,7 @@ app.get("/image", async (req, res) => {
 
         console.log(`📸 생성 중: ${imageFile} (${width}x${height})`);
         console.log("statRaw:", statRaw);
-        console.log("statNormalized:", stat);
+        console.log("statDecoded:", stat);
 
         let fontSize_ = Math.floor(fontSize);
         let nameSize = Math.floor(fontSize * 1.3);
@@ -237,10 +223,15 @@ function wrapText(text, maxChars) {
             current += char;
         }
     }
+
     if (current) lines.push(current);
-    return lines;
+    return lines.length > 0 ? lines : [text];
 }
 
 app.listen(PORT, () => {
-    console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+    console.log(`🚀 서버 시작: http://localhost:${PORT}/image`);
+    console.log(
+        `📱 사용법 예: /image?img=1&name=수아&text=비 맞았어...&stat=|♥호감도 10%♥|`
+    );
+    console.log(`✅ 준비 완료!`);
 });
