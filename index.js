@@ -90,7 +90,7 @@ app.get("/image", async (req, res) => {
         let textY = nameY + lineHeight + 5;
         const maxWidth = boxWidth - (padding * 2);
         const charWidth = fontSize_ * 0.55;
-        const maxCharsPerLine = 37;
+        const maxCharsPerLine = 38;
 
         // stat 박스 정보
         const statFontSize = Math.floor(nameSize * 0.6);
